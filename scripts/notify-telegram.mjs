@@ -1,5 +1,7 @@
 import { readFileSync, existsSync } from "node:fs";
 
+const PROJECT_ORDER = ["unit", "api", "e2e"];
+
 const {
   TELEGRAM_BOT_TOKEN,
   TELEGRAM_CHAT_ID,
@@ -12,6 +14,8 @@ const {
   GITHUB_REF_NAME,
   GITHUB_HEAD_REF,
   COMMIT_MESSAGE,
+  PR_URL,
+  REPORT_URL,
 } = process.env;
 
 if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
@@ -29,22 +33,23 @@ function readReport() {
   return JSON.parse(readFileSync(path, "utf-8"));
 }
 
-function collectFailedTitles(suites, acc = []) {
+// Обходит дерево suites/specs один раз и для каждого запуска теста (по одному
+// на project — unit/api/e2e видят разные файлы, но общий спек может попасть
+// в несколько project'ов) вызывает visit(project, spec.title, test).
+function walkTests(suites, visit) {
   for (const suite of suites ?? []) {
     for (const spec of suite.specs ?? []) {
       for (const test of spec.tests ?? []) {
-        const status = test.results?.at(-1)?.status;
-
-        if (status === "failed" || status === "timedOut") {
-          acc.push(spec.title);
-        }
+        visit(test.projectName ?? "unknown", spec.title, test);
       }
     }
 
-    collectFailedTitles(suite.suites, acc);
+    walkTests(suite.suites, visit);
   }
+}
 
-  return acc;
+function emptyBucket() {
+  return { passed: 0, failed: 0, flaky: 0, skipped: 0 };
 }
 
 function formatDuration(ms) {
@@ -57,6 +62,12 @@ function formatDuration(ms) {
   return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 }
 
+function progressBar(rate, segments = 10) {
+  const filled = Math.max(0, Math.min(segments, Math.round((rate / 100) * segments)));
+
+  return "▰".repeat(filled) + "▱".repeat(segments - filled);
+}
+
 function escapeHtml(text) {
   return String(text)
     .replace(/&/g, "&amp;")
@@ -66,14 +77,30 @@ function escapeHtml(text) {
 
 const report = readReport();
 
+const projectStats = {};
+const failedEntries = [];
+
+if (report !== null) {
+  walkTests(report.suites, (project, title, test) => {
+    const bucket = (projectStats[project] ??= emptyBucket());
+
+    if (test.status === "expected") bucket.passed++;
+    else if (test.status === "flaky") bucket.flaky++;
+    else if (test.status === "skipped") bucket.skipped++;
+    else {
+      bucket.failed++;
+      failedEntries.push({ project, title });
+    }
+  });
+}
+
 const stats = report?.stats ?? {};
 const passed = stats.expected ?? 0;
 const failed = stats.unexpected ?? 0;
 const flaky = stats.flaky ?? 0;
 const skipped = stats.skipped ?? 0;
-const total = passed + failed + flaky + skipped;
-
-const failedTitles = failed > 0 ? collectFailedTitles(report?.suites) : [];
+const executed = passed + failed + flaky;
+const passRate = executed > 0 ? Math.round(((passed + flaky) / executed) * 100) : 100;
 
 const branch = GITHUB_HEAD_REF || GITHUB_REF_NAME || "unknown";
 const eventLabel = GITHUB_EVENT_NAME === "pull_request" ? "pull request" : GITHUB_EVENT_NAME;
@@ -86,24 +113,37 @@ const statusText = report === null ? "Прогон не завершился (н
 
 const lines = [
   `${statusIcon} <b>${escapeHtml(statusText)}</b> (${formatDuration(stats.duration)})`,
-  `📦 ${escapeHtml(GITHUB_REPOSITORY)}`,
-  `🌿 ${escapeHtml(branch)} (${escapeHtml(eventLabel)})`,
-  `👤 ${escapeHtml(GITHUB_ACTOR)}`,
+  `📦 Репозиторий: ${escapeHtml(GITHUB_REPOSITORY)}`,
+  `🌿 Ветка: ${escapeHtml(branch)} (${escapeHtml(eventLabel)})`,
+  `👤 Автор: ${escapeHtml(GITHUB_ACTOR)}`,
 ];
 
 if (report !== null) {
-  lines.push(
-    `📊 Всего: ${total} | ✅ ${passed} | ❌ ${failed} | 🔁 ${flaky} | ⏭️ ${skipped}`,
-  );
+  lines.push(`📊 Всего: ${passed + failed + flaky + skipped} | ✅ ${passed} | ❌ ${failed} | 🔁 ${flaky} | ⏭️ ${skipped}`);
+
+  const orderedProjects = [
+    ...PROJECT_ORDER.filter((name) => projectStats[name]),
+    ...Object.keys(projectStats).filter((name) => !PROJECT_ORDER.includes(name)),
+  ];
+
+  for (const name of orderedProjects) {
+    const bucket = projectStats[name];
+    const bucketTotal = bucket.passed + bucket.failed + bucket.flaky + bucket.skipped;
+    const bucketIcon = bucket.failed > 0 ? "❌" : "✅";
+
+    lines.push(`   ${bucketIcon} ${escapeHtml(name)}: ${bucket.passed + bucket.flaky}/${bucketTotal}`);
+  }
+
+  lines.push(`${progressBar(passRate)} ${passRate}%`);
 }
 
-if (failedTitles.length > 0) {
-  const shown = failedTitles.slice(0, 5);
-  const rest = failedTitles.length - shown.length;
+if (failedEntries.length > 0) {
+  const shown = failedEntries.slice(0, 5);
+  const rest = failedEntries.length - shown.length;
 
   lines.push("");
   lines.push("<b>Упавшие тесты:</b>");
-  lines.push(...shown.map((title) => `• ${escapeHtml(title)}`));
+  lines.push(...shown.map(({ project, title }) => `• [${escapeHtml(project)}] ${escapeHtml(title)}`));
 
   if (rest > 0) {
     lines.push(`…и ещё ${rest}`);
@@ -112,7 +152,15 @@ if (failedTitles.length > 0) {
 
 lines.push("");
 lines.push(`🔗 <a href="${runUrl}">Прогон в GitHub</a>`);
-lines.push(`💬 <a href="${commitUrl}">${shortSha}</a> ${escapeHtml(COMMIT_MESSAGE ?? "")}`);
+lines.push(`💬 Коммит: <a href="${commitUrl}">${shortSha}</a> — ${escapeHtml(COMMIT_MESSAGE ?? "")}`);
+
+if (PR_URL) {
+  lines.push(`🔀 <a href="${PR_URL}">Pull Request</a>`);
+}
+
+if (REPORT_URL) {
+  lines.push(`📄 <a href="${REPORT_URL}">Playwright HTML report</a>`);
+}
 
 const text = lines.join("\n");
 

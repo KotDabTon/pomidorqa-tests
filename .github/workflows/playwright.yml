@@ -64,6 +64,8 @@ jobs:
 
       # Сохраняем HTML-отчёт после завершения тестов.
       - name: Upload Playwright report
+        # Нужен id, чтобы взять ссылку на artifact из outputs шага ниже.
+        id: upload-report
         # Загружаем отчёт и после успеха, и после падения; пропускаем только отменённый run.
         if: ${{ !cancelled() }}
         # Официальный action GitHub превращает каталог в artifact текущего run.
@@ -87,3 +89,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message || github.event.pull_request.title }}
+          # Заполнено только для события pull_request; для push — пустая строка.
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          # Ссылка на скачивание artifact из шага выше; пусто, если отчёт не загрузился.
+          REPORT_URL: ${{ steps.upload-report.outputs.artifact-url }}
