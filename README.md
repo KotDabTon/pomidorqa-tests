@@ -439,6 +439,12 @@ Mock API позволяет проверять API-бизнес-логику б�
 
 GitHub Actions workflow для автоматической проверки проекта.
 
+Запускается:
+
+* при `push` в ветку `main`;
+* при открытии или обновлении pull request в `main`;
+* вручную — кнопкой **Run workflow** во вкладке Actions.
+
 Workflow выполняет:
 
 1. запуск на Ubuntu;
@@ -447,9 +453,12 @@ Workflow выполняет:
 4. установку Chromium для Playwright;
 5. `npm run lint`;
 6. запуск тестов;
-7. сохранение Playwright HTML report как artifact.
+7. сохранение Playwright HTML report как artifact;
+8. отправку сводки о прогоне в Telegram (`scripts/notify-telegram.mjs`).
 
 Workflow предназначен для автоматической проверки состояния проекта в GitHub Actions.
+
+Уведомление в Telegram отправляется и при успехе, и при падении тестов (шаг помечен `continue-on-error`, поэтому отсутствие секретов не красит CI в красный). Для работы нужны репозиторные секреты `TELEGRAM_BOT_TOKEN` и `TELEGRAM_CHAT_ID`.
 
 ---
 

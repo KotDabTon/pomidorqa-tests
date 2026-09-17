@@ -3,11 +3,10 @@ name: Playwright CI
 
 # События, которые запускают проверки.
 on:
-  # Проверяем каждое изменение до слияния через Pull Request.
-  pull_request:
-    # `main` здесь — целевая ветка PR, а не имя рабочей ветки.
+  push:
     branches: [main]
-  # Оставляем кнопку ручного запуска во вкладке Actions.
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 # Все работы, которые выполнит workflow.
@@ -77,3 +76,14 @@ jobs:
           path: playwright-report/
           # Двух недель достаточно для разбора PR, старые учебные отчёты не храним бессрочно.
           retention-days: 14
+
+      # Отправляем сводку о прогоне в Telegram — и при успехе, и при падении тестов.
+      - name: Notify Telegram
+        if: ${{ !cancelled() }}
+        # Секрет отсутствует в форках PR — не должен красить общий CI в красный.
+        continue-on-error: true
+        run: node scripts/notify-telegram.mjs
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message || github.event.pull_request.title }}
