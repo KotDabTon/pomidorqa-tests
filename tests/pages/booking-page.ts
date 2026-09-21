@@ -130,13 +130,38 @@ export class BookingPage {
   }
 
   async cancelBooking(participantName: string): Promise<void> {
-    const card = this.bookingCardByName(participantName);
-
-    await card.getByRole("button", { name: "Отменить" }).click();
+    await this.clickCancel(participantName);
 
     await this.bookingCardByName(participantName).waitFor({
       state: "hidden",
       timeout: 15_000,
     });
+  }
+
+  async clickCancel(participantName: string): Promise<void> {
+    const card = this.bookingCardByName(participantName);
+
+    await this.cancelButtonIn(card).click();
+  }
+
+  cancelButtonIn(card: Locator): Locator {
+    return card.getByRole("button", { name: "Отменить" });
+  }
+
+  async firstAvailableSlotTime(): Promise<string> {
+    await this.bookingCalendarDay.first().click();
+    const text = await this.bookingCalendarTime.first().textContent();
+
+    return (text ?? "").trim();
+  }
+
+  async availableSlotTimesCount(): Promise<number> {
+    await this.bookingCalendarDay.first().click();
+
+    return this.bookingCalendarTime.count();
+  }
+
+  async closeBookingDialog(): Promise<void> {
+    await this.page.keyboard.press("Escape");
   }
 }

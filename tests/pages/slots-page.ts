@@ -29,7 +29,7 @@ export class SlotsPage {
     return this.page.locator(`[data-slot-id="${slotId}"]`);
   }
 
-  async addSlot(time: string, dateStr?: string): Promise<void> {
+  async addSlot(time: string, dateStr?: string): Promise<string> {
     const targetDate = dateStr ?? tomorrow();
     const slotsBefore = await this.slotCards.count();
 
@@ -54,15 +54,41 @@ export class SlotsPage {
       );
     }
 
-    await this.slotCards.nth(slotsBefore).waitFor({
-      state: "visible",
-      timeout: 10_000,
-    });
+    const newCard = this.slotCards.nth(slotsBefore);
+    await newCard.waitFor({ state: "visible", timeout: 10_000 });
+
+    const slotId = await newCard.getAttribute("data-slot-id");
+    if (!slotId) {
+      throw new Error("У созданной карточки слота нет атрибута data-slot-id");
+    }
+
+    return slotId;
   }
 
   async removeSlot(slotId: string): Promise<void> {
     const card = this.slotCard(slotId);
     await card.getByRole("button", { name: "Удалить" }).click();
     await card.waitFor({ state: "hidden", timeout: 15_000 });
+  }
+
+  deleteButton(slotId: string): Locator {
+    return this.slotCard(slotId).getByRole("button", { name: "Удалить" });
+  }
+
+  get bookedSlots(): Locator {
+    return this.page.locator('[data-slot-status="booked"]');
+  }
+
+  deleteButtonIn(card: Locator): Locator {
+    return card.getByRole("button", { name: "Удалить" });
+  }
+
+  async slotCount(): Promise<number> {
+    return this.slotCards.count();
+  }
+  async attemptAddSlot(time: string, dateStr: string): Promise<void> {
+    await this.dateInput.fill(dateStr);
+    await this.timeInput.fill(time);
+    await this.addSubmitButton.click();
   }
 }

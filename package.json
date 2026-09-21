@@ -9,6 +9,8 @@
     "test:api": "playwright test --project=api",
     "test:e2e": "playwright test --project=e2e",
     "lint": "eslint tests",
+    "typecheck": "tsc --noEmit",
+    "gate": "npm run typecheck && npm run lint && npm run test:unit && npm run test:api && npm run test:e2e",
     "report": "playwright show-report"
   },
   "devDependencies": {

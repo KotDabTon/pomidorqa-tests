@@ -81,13 +81,15 @@ export class ProfilePage {
     });
   }
 
-  async addSkill(name: string, type: SkillType): Promise<void> {
-    await this.skillInput.fill(name);
-    await this.skillTypeSelect.selectOption(type);
+  async logout(): Promise<void> {
+    const logoutButton = this.page.getByRole("button", { name: "Выйти" });
 
-    await this.mutation(`Добавление навыка "${name}"`, async () => {
-      await this.addSkillButton.click();
-    });
+    await logoutButton.click();
+    await logoutButton.waitFor({ state: "hidden", timeout: 10_000 });
+  }
+
+  async addSkill(name: string, type: SkillType): Promise<void> {
+    await this.submitSkill(name, type);
 
     await this.skillItem(name, type).waitFor({
       state: "visible",
@@ -95,8 +97,21 @@ export class ProfilePage {
     });
   }
 
+  async submitSkill(name: string, type: SkillType): Promise<void> {
+    await this.skillInput.fill(name);
+    await this.skillTypeSelect.selectOption(type);
+    await this.addSkillButton.click();
+  }
+
   async submitEmptySkill(): Promise<void> {
     await this.addSkillButton.click();
+  }
+
+  async deleteSkill(tag: string, type: SkillType): Promise<void> {
+    const item = this.skillItem(tag, type);
+
+    await item.getByRole("button", { name: `Убрать ${tag}` }).click();
+    await item.waitFor({ state: "hidden", timeout: 10_000 });
   }
 
   skillItem(tag: string, type: SkillType): Locator {

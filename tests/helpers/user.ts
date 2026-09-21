@@ -65,6 +65,16 @@ export async function registerUser(
   });
 }
 
+export async function submitEmptyRegistrationForm(page: Page): Promise<void> {
+  await test.step(
+    "Хелпер: отправка формы регистрации с пустыми полями",
+    async () => {
+      await page.goto(ROUTES.register);
+      await page.getByRole("button", { name: "Зарегистрироваться" }).click();
+    },
+  );
+}
+
 export async function registerUserViaApi(
   request: APIRequestContext,
   user: TestUser,
@@ -94,6 +104,15 @@ export async function deleteUserViaApi(
   await test.step(
     "Хелпер: удаление тестового участника через API",
     async () => {
+      const cookies = await context.cookies();
+      const hasSession = cookies.some(
+        (cookie) => cookie.name === "pomidorqa_session",
+      );
+
+      if (!hasSession) {
+        return;
+      }
+
       const response = await context.request.delete(
         TEST_ACCOUNTS_ENDPOINT,
       );

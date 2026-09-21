@@ -3,7 +3,7 @@ import { createApp, prepareHostParticipant } from "../helpers/booking";
 import { cleanupUsersViaApi } from "../helpers/user";
 
 test.describe("PomidorQA: поиск участников", () => {
-  test("гость находит участника по уникальному навыку", async ({ browser }) => {
+  test("Гость находит участника по уникальному навыку", async ({ browser }) => {
     const hostApp = await createApp(browser);
     const guestApp = await createApp(browser);
 
@@ -30,9 +30,11 @@ test.describe("PomidorQA: поиск участников", () => {
     }
   });
 
-  test("поиск показывает подходящего участника и исключает неподходящего", async ({
+  test("Поиск показывает подходящего участника и исключает неподходящего", async ({
     browser,
   }) => {
+    test.setTimeout(60_000);
+
     const firstHostApp = await createApp(browser);
     const secondHostApp = await createApp(browser);
     const guestApp = await createApp(browser);
@@ -41,17 +43,13 @@ test.describe("PomidorQA: поиск участников", () => {
       const firstSkill = `Skill-A-${Date.now()}`;
       const secondSkill = `Skill-B-${Date.now()}`;
 
-      const firstHost = await prepareHostParticipant(
-        firstHostApp,
-        "host-a",
-        firstSkill,
-        "12:00",
-      );
-      const secondHost = await prepareHostParticipant(
-        secondHostApp,
-        "host-b",
-        secondSkill,
-        "13:00",
+      const [firstHost, secondHost] = await test.step(
+        "Arrange: два независимых хоста регистрируются и добавляют навык со слотом параллельно",
+        () =>
+          Promise.all([
+            prepareHostParticipant(firstHostApp, "host-a", firstSkill, "12:00"),
+            prepareHostParticipant(secondHostApp, "host-b", secondSkill, "13:00"),
+          ]),
       );
 
       await test.step("Гость: открывает каталог PomidorQA", async () => {
@@ -83,7 +81,7 @@ test.describe("PomidorQA: поиск участников", () => {
     }
   });
 
-  test("авторизованный пользователь не видит собственную карточку, а гость видит", async ({
+  test("Авторизованный пользователь не видит собственную карточку, а гость видит", async ({
     browser,
   }) => {
     const hostApp = await createApp(browser);

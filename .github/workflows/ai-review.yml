@@ -1,0 +1,66 @@
+name: AI Review
+
+# Запускается не на pull_request напрямую, а после успешного завершения
+# workflow "Playwright CI" — так ревьюер получает доступ к секретам и
+# write-токену, не выполняя код из PR на этом шаге.
+on:
+  workflow_run:
+    workflows: [Playwright CI]
+    types: [completed]
+
+# Минимально необходимые права: читать репозиторий и публиковать review в PR.
+permissions:
+  contents: read
+  pull-requests: write
+
+# На один PR — один активный прогон ревью; новый пуш отменяет предыдущий.
+concurrency:
+  group: ai-review-${{ github.event.workflow_run.pull_requests[0].number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Review pull request with AI
+    # Ревью запускается только если исходный CI был вызван pull_request'ом,
+    # завершился успешно и к прогону действительно привязан PR.
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.pull_requests[0] != null
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      # Привилегированный workflow: здесь доступны секрет AI-провайдера и
+      # write-токен. Код PR не checkout-им и не запускаем — ревьюер берётся
+      # только из доверенной ветки (default branch репозитория).
+      - name: Checkout trusted reviewer from main
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          # Токен не сохраняется в .git, чтобы его нельзя было утащить.
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      # AI-провайдер для ревью пока не выбран (см. docs/ai-reviewer.md).
+      # scripts/ai-review.mjs работает с любым OpenAI-совместимым endpoint'ом
+      # (chat/completions) — подключение провайдера не требует правки кода,
+      # достаточно завести в настройках репозитория:
+      #   Settings → Secrets and variables → Actions → Secrets:
+      #     AI_REVIEW_API_KEY       — ключ выбранного провайдера;
+      #   Settings → Secrets and variables → Actions → Variables:
+      #     AI_REVIEW_API_BASE_URL  — базовый URL API (без /chat/completions);
+      #     AI_REVIEW_MODEL         — идентификатор модели у этого провайдера.
+      - name: Review Pull Request diff
+        run: node scripts/ai-review.mjs
+        env:
+          AI_REVIEW_ALLOW_PUBLISH: true
+          AI_REVIEW_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          AI_REVIEW_PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          GITHUB_TOKEN: ${{ github.token }}
+          AI_REVIEW_API_KEY: ${{ secrets.AI_REVIEW_API_KEY }}
+          AI_REVIEW_API_BASE_URL: ${{ vars.AI_REVIEW_API_BASE_URL }}
+          AI_REVIEW_MODEL: ${{ vars.AI_REVIEW_MODEL }}
